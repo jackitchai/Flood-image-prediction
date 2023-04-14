@@ -1,0 +1,141 @@
+import tensorflow as tf
+import os
+import numpy as np
+from tqdm import tqdm
+from skimage.io import imread, imshow
+#################### set variable
+IMG_WIDTH = 128
+IMG_HEIGHT = 128
+IMG_CHANNELS = 1
+LAGS = 5
+TRAIN_PATH = 'Data_Ubon_128/'
+train_ids = os.listdir(TRAIN_PATH)
+X_train = np.zeros((len(train_ids),LAGS, IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS))
+Y_train = np.zeros((len(train_ids)-LAGS,1, IMG_HEIGHT, IMG_WIDTH,1))
+#################### normalize
+def normalize(data, maxVal=None, minVal=None):
+    # Normalize with min/max values of the data
+    if maxVal is None or minVal is None: 
+        data = 0.1+((data-np.min(data))*(1-0.1))/(np.max(data)-np.min(data))
+    # Normalize with max and min given
+    else:
+        data = 0.1+((data-minVal)*(1-0.1))/(maxVal-minVal)
+    data = np.nan_to_num(data, nan=0)
+    return data
+#################### เก็บ X_train, Y_train
+import cv2 
+for n, id_ in tqdm(enumerate(train_ids), total=len(train_ids)):   
+    path = TRAIN_PATH + id_
+    img_x = imread(path)
+    minVal = np.min(img_x)
+    maxVal = np.max(img_x)
+    img = normalize(img_x, maxVal, minVal)
+    img = np.expand_dims(img, axis=-1)
+    if n >= 5:
+        Y_train[n-5][0]= img
+        # Y_train[n-3][0] = img
+    for i in range(min(n+1, 5)):
+        X_train[n-i][i] = img
+ #check size X_train, Y_train
+X_train = X_train[:456]
+print(Y_train.shape) #(456, 1, 128, 128, 1)
+print(X_train.shape) #(456, 5, 128, 128, 1)
+################### model 
+
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Add, Dropout, concatenate, BatchNormalization, Activation
+from tensorflow.keras.layers import Conv3D, MaxPool3D, UpSampling3D
+def UNet_3DDR():
+    lags = 5
+    filters = 4
+    dropout = 0.5
+    kernel_init=tf.keras.initializers.GlorotUniform(seed=50)
+    features_output = 1
+    inputs = Input(shape = (lags, 128, 128, 1)) 
+    conv1 = Conv3D(filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(inputs)
+    conv1 = Conv3D(filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv1)
+    pool1 = MaxPool3D(pool_size=(1, 2, 2))(conv1)
+
+    conv2 = Conv3D(2*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(pool1)
+    conv2 = Conv3D(2*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv2)
+    pool2 = MaxPool3D(pool_size=(1, 2, 2))(conv2)
+
+    conv3 = Conv3D(4*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(pool2)
+    conv3 = Conv3D(4*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv3)
+    pool3 = MaxPool3D(pool_size=(1, 2, 2))(conv3)
+
+    conv4 = Conv3D(8*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(pool3)
+    conv4 = Conv3D(8*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv4)
+    drop4 = Dropout(dropout)(conv4)
+
+    #--- Bottleneck part ---#
+    pool4 = MaxPool3D(pool_size=(1, 2, 2))(drop4)
+    conv5 = Conv3D(16*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(pool4)
+    compressLags = Conv3D(16*filters, (lags,1,1),activation = 'relu', padding = 'valid')(conv5)
+    conv5 = Conv3D(16*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(compressLags)
+    drop5 = Dropout(dropout)(conv5)
+
+    #--- Expanding part / decoder ---#
+    up6 = Conv3D(8*filters, 2, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(UpSampling3D(size = (1,2,2))(drop5))
+    compressLags = Conv3D(8*filters, (lags,1,1),activation = 'relu', padding = 'valid')(drop4)
+    merge6 = concatenate([compressLags,up6], axis = -1)
+    conv6 = Conv3D(8*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(merge6)
+    conv6 = Conv3D(8*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv6)
+
+    up7 = Conv3D(4*filters, 2, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(UpSampling3D(size = (1,2,2))(conv6))
+    compressLags = Conv3D(4*filters, (lags,1,1),activation = 'relu', padding = 'valid')(conv3)
+    merge7 = concatenate([compressLags,up7], axis = -1)
+    conv7 = Conv3D(4*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(merge7)
+    conv7 = Conv3D(4*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv7)
+
+    up8 = Conv3D(2*filters, 2, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(UpSampling3D(size = (1,2,2))(conv7))
+    compressLags = Conv3D(2*filters, (lags,1,1),activation = 'relu', padding = 'valid')(conv2)
+    merge8 = concatenate([compressLags,up8], axis = -1)
+    conv8 = Conv3D(2*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(merge8)
+    conv8 = Conv3D(2*filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv8)
+
+    up9 = Conv3D(filters, 2, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(UpSampling3D(size = (1,2,2))(conv8))
+    compressLags = Conv3D(filters, (lags,1,1),activation = 'relu', padding = 'valid')(conv1)
+    merge9 = concatenate([compressLags,up9], axis = -1)
+    conv9 = Conv3D(filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(merge9)
+    conv9 = Conv3D(filters, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv9)
+    conv9 = Conv3D(2*features_output, 3, activation = 'relu', padding = 'same', kernel_initializer = kernel_init)(conv9)
+
+    conv10 = Conv3D(features_output, 1, activation = 'relu')(conv9) #Reduce last dimension    
+
+    return Model(inputs = inputs, outputs = conv10)
+    from tensorflow.keras.models import load_model
+#################### model summary + model train
+from tensorflow.keras.callbacks import ModelCheckpoint
+model = UNet_3DDR()
+filepath="best_model_3D.hdf5"
+model = load_model(filepath, compile=False)
+checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='min')
+callbacks = [checkpoint]
+model.compile(loss = "mse",optimizer = "adam",metrics = ['accuracy'])
+model.fit(X_train, Y_train, epochs=10,callbacks = callbacks)
+model.save(filepath) 
+##################### test
+TEST_PATH = 'testforfun/'
+test_ids = os.listdir(TEST_PATH)
+X_test = np.zeros((1,3, IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), dtype=np.uint8)
+for n, id_ in tqdm(enumerate(test_ids), total=len(test_ids)):   
+    path = TEST_PATH + id_
+    img = imread(path)
+    img = np.expand_dims(img, axis=-1)
+    X_test[0][n] = img
+import matplotlib.pyplot as plt
+img_predict = model.predict(X_test)
+#################### predict
+import matplotlib.pyplot as plt
+print(np.squeeze(img_predict).shape)
+# plt.imshow(img_predict[0, :, :,0], cmap='gray')
+# (img_predict > 0.5).astype(np.uint8)
+plt.imshow(np.squeeze(img_predict),cmap="gray")
+# plt.imshow(img_predict)
+print(Y_train.shape)
+print(X_train.shape)
+print(img_predict.shape)
+model.summary()
+    
