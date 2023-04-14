@@ -36,7 +36,7 @@ for n, id_ in tqdm(enumerate(train_ids), total=len(train_ids)):
         # Y_train[n-3][0] = img
     for i in range(min(n+1, 5)):
         X_train[n-i][i] = img
- #check size X_train, Y_train
+#################### check size X_train, Y_train
 X_train = X_train[:456]
 print(Y_train.shape) #(456, 1, 128, 128, 1)
 print(X_train.shape) #(456, 5, 128, 128, 1)
@@ -105,8 +105,8 @@ def UNet_3DDR():
     conv10 = Conv3D(features_output, 1, activation = 'relu')(conv9) #Reduce last dimension    
 
     return Model(inputs = inputs, outputs = conv10)
-    from tensorflow.keras.models import load_model
 #################### model summary + model train
+from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import ModelCheckpoint
 model = UNet_3DDR()
 filepath="best_model_3D.hdf5"
