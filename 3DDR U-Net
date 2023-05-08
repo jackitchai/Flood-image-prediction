@@ -3,15 +3,26 @@ import os
 import numpy as np
 from tqdm import tqdm
 from skimage.io import imread, imshow
+from natsort import natsorted
+
+
 #################### set variable
 IMG_WIDTH = 128
 IMG_HEIGHT = 128
 IMG_CHANNELS = 1
 LAGS = 5
-TRAIN_PATH = 'Data_Ubon_128/'
-train_ids = os.listdir(TRAIN_PATH)
+# province = "Ubon"
+# province = "Nakhonsawan"
+# province = "Phranakorn"
+province = "Metropolitan"
+TRAIN_PATH = 'X_train/128/Data_%s_128/'%(province)
+train_ids = natsorted(os.listdir(TRAIN_PATH))
 X_train = np.zeros((len(train_ids),LAGS, IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS))
 Y_train = np.zeros((len(train_ids)-LAGS,1, IMG_HEIGHT, IMG_WIDTH,1))
+
+
+
+
 #################### normalize
 def normalize(data, maxVal=None, minVal=None):
     # Normalize with min/max values of the data
@@ -22,24 +33,41 @@ def normalize(data, maxVal=None, minVal=None):
         data = 0.1+((data-minVal)*(1-0.1))/(maxVal-minVal)
     data = np.nan_to_num(data, nan=0)
     return data
+    
+    
+    
 #################### เก็บ X_train, Y_train
 import cv2 
 for n, id_ in tqdm(enumerate(train_ids), total=len(train_ids)):   
     path = TRAIN_PATH + id_
-    img_x = imread(path)
-    minVal = np.min(img_x)
-    maxVal = np.max(img_x)
-    img = normalize(img_x, maxVal, minVal)
+    img = imread(path,as_gray= True)
+    # minVal = np.min(img_x)
+    # maxVal = np.max(img_x)
+    # img = normalize(img_x, maxVal, minVal)
     img = np.expand_dims(img, axis=-1)
-    if n >= 5:
-        Y_train[n-5][0]= img
+    if n >= LAGS:
+        Y_train[n-LAGS][0]= img
         # Y_train[n-3][0] = img
-    for i in range(min(n+1, 5)):
+    for i in range(min(n+1, LAGS)):
         X_train[n-i][i] = img
+        
+        
+        
+        
 #################### check size X_train, Y_train
-X_train = X_train[:456]
-print(Y_train.shape) #(456, 1, 128, 128, 1)
-print(X_train.shape) #(456, 5, 128, 128, 1)
+import matplotlib.pyplot as plt
+X_train = X_train[:len(train_ids)-LAGS]
+#check shape
+print(X_train.shape)
+print(Y_train.shape)
+#check image 
+imshow(X_train[350][3]) #450
+plt.show()
+imshow(Y_train[200][0])
+plt.show()
+
+
+
 ################### model 
 
 import tensorflow as tf
@@ -49,7 +77,7 @@ from tensorflow.keras.layers import Conv3D, MaxPool3D, UpSampling3D
 def UNet_3DDR():
     lags = 5
     filters = 4
-    dropout = 0.5
+    dropout = 0.5 #0.5
     kernel_init=tf.keras.initializers.GlorotUniform(seed=50)
     features_output = 1
     inputs = Input(shape = (lags, 128, 128, 1)) 
@@ -105,28 +133,53 @@ def UNet_3DDR():
     conv10 = Conv3D(features_output, 1, activation = 'relu')(conv9) #Reduce last dimension    
 
     return Model(inputs = inputs, outputs = conv10)
+    
+    
+    
+    
+    
 #################### model summary + model train
 from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import ModelCheckpoint
 model = UNet_3DDR()
-filepath="best_model_3D.hdf5"
-model = load_model(filepath, compile=False)
+filepath="model_%s_5_deno.hdf5"%(province)
+# model = load_model(filepath, compile=False)
 checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='min')
 callbacks = [checkpoint]
-model.compile(loss = "mse",optimizer = "adam",metrics = ['accuracy'])
-model.fit(X_train, Y_train, epochs=10,callbacks = callbacks)
-model.save(filepath) 
+model.summary()
+model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
+history1 = model.fit(X_train, Y_train, epochs=30)
+# history2 = model.fit(X_train, Y_train, epochs=30)
+# history3 = model.fit(X_train, Y_train, epochs=30)
+# history4 = model.fit(X_train, Y_train, epochs=30)
+# loss = history.history['loss']
+# mae = history.history['mse']
+# rmse = history.history['rmse']
+# epochs = range(1, len(loss) + 1)
+# plt.plot(epochs, loss, 'b', label='Training Loss')
+# plt.title('Training Loss')
+# plt.xlabel('Epochs')
+# plt.ylabel('Loss')
+# plt.legend()
+# plt.show()
+
+
+
 ##################### test
-TEST_PATH = 'testforfun/'
-test_ids = os.listdir(TEST_PATH)
-X_test = np.zeros((1,3, IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), dtype=np.uint8)
-for n, id_ in tqdm(enumerate(test_ids), total=len(test_ids)):   
+TEST_PATH = 'X_test/test_Phranakorn/Flood_1/x_test/'
+
+test_ids = natsorted(os.listdir(TEST_PATH))
+# ytest_ids = os.listdir('X_test/6/y_train/')
+X_test = np.zeros((1,5, IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS))
+# print(ytest_ids)
+for n, id_ in tqdm(enumerate(test_ids), total=len(test_ids)):  
     path = TEST_PATH + id_
-    img = imread(path)
+    print(path)
+    img = imread(path,as_gray= True)
     img = np.expand_dims(img, axis=-1)
     X_test[0][n] = img
-import matplotlib.pyplot as plt
 img_predict = model.predict(X_test)
+
 #################### predict
 import matplotlib.pyplot as plt
 print(np.squeeze(img_predict).shape)
@@ -138,4 +191,30 @@ print(Y_train.shape)
 print(X_train.shape)
 print(img_predict.shape)
 model.summary()
+
+
+
+################## PSNR,MSE,SSIM
+from skimage.metrics import peak_signal_noise_ratio
+from skimage.metrics import structural_similarity as ssim
+from skimage import io
+img_orig = imread("Predict/%s/%s_%s"%(province,province,date),as_gray= True)
+# img_orig = imread('Predict/Ubon/Ubon_%s'%(date),as_gray= True)
+# img_orig = imread('test8.jpg',as_gray= True)
+img_compressed = imread('X_test/test_Phranakorn/Flood_1/key_x_test/%s'%(date),as_gray= True)
+# img_compressed = imread('Seen_x_test/Ubon/Flood_5/key_x_test/%s'%(date),as_gray= True)
+# img_compressed = imread('X_test/1/x_train/2019_9_5.jpg',as_gray=True)
+print(img_orig.shape)
+print(img_compressed.shape)
+imshow(img_orig)
+plt.show()
+imshow(img_compressed)
+plt.show()
+
+psnr = peak_signal_noise_ratio(img_orig, img_compressed)
+mse = np.mean((img_orig - img_compressed) ** 2)
+ssim_score = ssim(img_orig, img_compressed, multichannel=True)
+print(ssim_score)
+print(mse)
+print(psnr)
     
