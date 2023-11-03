@@ -1,5 +1,5 @@
-# Predicting floods image using the 3DDR_UNet (3D Dimension Reducer) model with satellite images from Google Earth Engine.
-
+# Flood image prediction with Deep learning
+Predicting floods image using the 3DDR_UNet (3D Dimension Reducer) model with satellite images from Google Earth Engine.
 
 ## Google earth engine
 - Check image before download from GGE Visualization and download data by GGE collect data
