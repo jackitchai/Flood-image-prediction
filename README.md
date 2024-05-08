@@ -16,7 +16,7 @@ Ubon Ratchatani predicted image with flooding image 5-day lag
 <img width="929" alt="Screenshot 2566-11-03 at 16 39 43" src="https://github.com/jackitchai/Flood-image-prediction/assets/107567014/3a463e1b-4193-482b-9182-9253092e129d">
 
 
-## This is my model reference:
+## model reference:
 @article{fernandez2022deep,
   title={Deep coastal sea elements forecasting using UNet-based models},
   author={Fern{\'a}ndez, Jes{\'u}s Garc{\'\i}a and Abdellaoui, Ismail Alaoui and Mehrkanoon, Siamak},
